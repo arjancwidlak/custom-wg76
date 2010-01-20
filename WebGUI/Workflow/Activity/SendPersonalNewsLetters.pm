@@ -1,0 +1,130 @@
+package WebGUI::Workflow::Activity::SendPersonalNewsLetters; 
+
+
+=head1 LEGAL
+
+ -------------------------------------------------------------------
+  WebGUI is Copyright 2001-2009 Plain Black Corporation.
+ -------------------------------------------------------------------
+  Please read the legal notices (docs/legal.txt) and the license
+  (docs/license.txt) that came with this distribution before using
+  this software.
+ -------------------------------------------------------------------
+  http://www.plainblack.com                     info@plainblack.com
+ -------------------------------------------------------------------
+
+=cut
+
+use strict;
+use base 'WebGUI::Workflow::Activity';
+use WebGUI::Asset;
+use WebGUI::Mail::Send;
+use WebGUI::Macro::PersonalNewsLetter;
+
+=head1 NAME
+
+Package WebGUI::Workflow::Activity::SendPersonalNewsLetters
+
+=head1 DESCRIPTION
+
+This Activity generates personalized newsletters form the personalNewsLetterQueue and adds them to the mailQueue.
+
+=head1 SYNOPSIS
+
+=head1 METHODS
+
+=cut
+
+
+#-------------------------------------------------------------------
+
+=head2 definition ( session, definition )
+
+See WebGUI::Workflow::Activity::defintion() for details.
+
+=cut 
+
+sub definition {
+	my $class = shift;
+	my $session = shift;
+	my $definition = shift;
+	push(@{$definition}, {
+		name=>'Send Personal NewsLetters',
+		properties=> { }
+		});
+	return $class->SUPER::definition($session,$definition);
+}
+
+
+#-------------------------------------------------------------------
+
+=head2 execute ( [ object ] )
+
+See WebGUI::Workflow::Activity::execute() for details.
+
+=cut
+
+sub execute {
+	my $self        = shift;
+    my $object      = shift;
+    my $instance    = shift;
+    my $session     = $self->session;
+    my ($db,$eh)    = $self->session->quick(qw(db errorHandler));
+    
+    my $time = time();
+    my @parameters = @{$instance->get('parameters')};
+    my $assetUrl = $parameters[1];
+    my $timeBetweenNewsLetters = $parameters[2] || 1;
+
+    #$eh->info("Getting newsletters from personalNewsLetterQueue");
+    my $personalNewsLetterQueue = $db->buildArrayRefOfHashRefs("select * 
+        from personalNewsLetterQueue where assetUrl = ? limit 100",[$assetUrl]);
+    #$eh->info("found ".scalar @$personalNewsLetterQueue." newsletters");
+    foreach my $newsLetter (@{$personalNewsLetterQueue}) {
+        #$eh->info("generating newsletter for user: ".$newsLetter->{userId});
+        # build newsletter
+        my ($html,$text) = WebGUI::Macro::PersonalNewsLetter::getEmailContent($session,$newsLetter->{styleTemplateId},$newsLetter->{userId},$newsLetter->{assetUrl});
+       
+        $eh->info("Sending mail to: ".$newsLetter->{to}); 
+        # send newsletter
+        my $mailSettings = {
+                            to          =>$newsLetter->{to},
+                            subject     =>$newsLetter->{subject},
+                            from        =>$newsLetter->{from},
+                            contentType =>"multipart/alternative"
+                            };
+        if($newsLetter->{bcc}){
+                $mailSettings->{bcc} = $newsLetter->{bcc};
+                $eh->info("using bcc: ".$mailSettings->{bcc});
+        }
+        my $mail = WebGUI::Mail::Send->create($session,$mailSettings);
+   
+	$mail->addText($text);
+=cut	 
+        $mail->{_message}->attach(
+                Charset=>"UTF-8",#"ISO-8859-1",
+                Data=>$text
+                );
+=cut
+
+        $mail->addHtml($html);
+        $mail->queue;
+
+        #$eh->info("Deleting user: ".$newsLetter->{userId}." from newsLetterQueue.");
+        # delete from queue
+        $db->write("delete from personalNewsLetterQueue where assetUrl = ? and userId = ?",
+                [$newsLetter->{assetUrl},$newsLetter->{userId}]);
+
+        # timeout if we're taking too long
+        if (time() - $time > 50) {
+            $eh->info("Oops. Ran out of time. Will continue building newsletters in a bit.");
+            return $self->WAITING(1);
+        }
+        sleep($timeBetweenNewsLetters);
+    }
+	return $self->COMPLETE;
+}
+
+1;
+
+

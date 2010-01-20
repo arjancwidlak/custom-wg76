@@ -1,0 +1,58 @@
+package WebGUI::Macro::LOM_subthemas;
+
+#-------------------------------------------------------------------
+# WebGUI is Copyright 2001-2009 Plain Black Software.
+#-------------------------------------------------------------------
+# Please read the legal notices (docs/legal.txt) and the license
+# (docs/license.txt) that came with this distribution before using
+# this software.
+#-------------------------------------------------------------------
+# http://www.plainblack.com                     info@plainblack.com
+#-------------------------------------------------------------------
+
+use strict;
+
+=head1 NAME
+
+Package WebGUI::Macro::LOM_subthemas
+
+=head1 DESCRIPTION
+
+Macro for quoting data to make it safe for use in SQL queries.
+
+=head2 process ( text )
+
+process is really a wrapper around WebGUI::SQL::$session->db->quote();
+
+=head3 text
+
+The text to quote.
+
+=cut
+
+#-------------------------------------------------------------------
+sub process {
+	my $session = shift;
+    my $ignoreFields = shift || '';
+    my $output;
+	my $fields = $session->db->read("select fieldId, fieldName from metaData_properties where !(fieldId IN("
+        .$ignoreFields."))");
+    while (my $field = $fields->hashRef){
+        $output .= $field->{fieldName}."<br />\n";
+        my $possibleValues = $session->db->quickScalar("select possibleValues from metaData_properties where fieldId =?"
+            ,[$field->{fieldId}]);
+        my @possibleValues = split("\n",$possibleValues);
+        foreach my $value (@possibleValues){
+            $output .= "<input type='radio' name='subthema' value='".$field->{fieldId}."|".$value."'>".$value
+                        ."<br />\n";
+        }
+        $output .= "<input type='radio' name='subthema' value='".$field->{fieldId}."|'>Alle Subthema's van ".
+                    $field->{fieldName}."<br />\n";
+	}
+    $output .= "<br /><input type='radio' name='subthema' value=''>Alle Subthema's<br />\n";
+    return $output;
+}
+
+
+1;
+
