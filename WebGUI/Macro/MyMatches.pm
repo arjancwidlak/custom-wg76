@@ -80,20 +80,17 @@ sub process {
 	where 
 		sectorOrganisatie = ? and soortorganisatie != ?
 	and
-		(select count(*) from Dates where 
+		(select count(senderUserId) from Dates where 
 			(senderUserId = ? AND recipientUserId = users.userId) 
 			OR (recipientUserId = ? AND senderUserId = users.userId)) = '0'
     and
         userId != ?
 	and
-	(select groupings.userId from groupings where groupings.userId = users.userId and groupings.groupId = 3) is null";
+	(select distinct groupings.userId from groupings where groupings.userId = users.userId and (groupings.groupId = 3 ";
     if($excludeGroupId){
-	$query .= "
-	and
-	(select groupings.userId from groupings where groupings.userId = users.userId and groupings.groupId = ".
-	$session->db->quote($excludeGroupId).") is null";
+	$query .= " OR groupings.groupId = ".$session->db->quote($excludeGroupId);
     }
-	$query .= "
+	$query .= ")) is null 
 	order by
 		dateCount asc
     limit $numberOfUsers",
