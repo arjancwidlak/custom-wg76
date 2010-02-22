@@ -1,7 +1,7 @@
 package WebGUI::Asset::Wobject::IssueCollaboration;
 
 #-------------------------------------------------------------------
-# WebGUI is Copyright 2001-2008 Plain Black Corporation.
+# WebGUI is Copyright 2001-2009 Plain Black Corporation.
 #-------------------------------------------------------------------
 # Please read the legal notices (docs/legal.txt) and the license
 # (docs/license.txt) that came with this distribution before using
@@ -20,9 +20,9 @@ use WebGUI::Paginator;
 use WebGUI::Utility;
 use WebGUI::Asset::Wobject;
 use WebGUI::Workflow::Cron;
-use WebGUI::Asset::RSSCapable;
-use base 'WebGUI::Asset::RSSCapable';
-use base 'WebGUI::Asset::Wobject';
+use Class::C3;
+use base qw(WebGUI::AssetAspect::RssFeed WebGUI::Asset::Wobject);
+
 
 #-------------------------------------------------------------------
 sub _computePostCount {
@@ -58,35 +58,47 @@ sub _visitorCacheKey {
 #-------------------------------------------------------------------
 sub _visitorCacheOk {
 	my $self = shift;
-	return ($self->session->user->userId eq '1'
+	return ($self->session->user->isVisitor
 		&& !$self->session->form->process('sortBy'));
 }
 
 #-------------------------------------------------------------------
-# encode a string to include in xml (for RSS export)
-sub _xml_encode {
-	my $text = shift;
-        $text =~ s/&/&amp;/g;
-        $text =~ s/</&lt;/g;
-        $text =~ s/\]\]>/\]\]&gt;/g;
-        return $text;
-}
 
-#-------------------------------------------------------------------
+=head2 addChild 
+
+Extend the base method to allow only Threads as children.
+
+=cut
+
 sub addChild {
 	my $self = shift;
 	my $properties = shift;
 	my @other = @_;
-	if ($properties->{className} ne "WebGUI::Asset::IssuePost::IssueThread"
-	    and $properties->{className} ne 'WebGUI::Asset::RSSFromParent') {
+	if ($properties->{className} ne "WebGUI::Asset::IssuePost::IssueThread") {
 		$self->session->errorHandler->security("add a ".$properties->{className}." to a ".$self->get("className"));
 		return undef;
 	}
-	return $self->SUPER::addChild($properties, @other);
+	return $self->next::method($properties, @other);
 }
 
 
 #-------------------------------------------------------------------
+
+=head2 appendPostListTemplateVars ($var, $p)
+
+Takes a WebGUI::Paginator object that should be full of Posts, and appends template
+variables to the hash reference.
+
+=head3 $var
+
+A hash reference.  Template variables will be added to it.
+
+=head3 $p
+
+A reference to a WebGUI::Paginator object.
+
+=cut
+
 sub appendPostListTemplateVars {
 	my $self = shift;
 	my $var = shift;
@@ -170,6 +182,17 @@ sub appendPostListTemplateVars {
 }
 
 #-------------------------------------------------------------------
+
+=head2 appendTemplateLabels ($var)
+
+Appends a whole mess of internationalized labels for use in a template.
+
+=head3 $var
+
+A hash reference.  Template labels will be appended to it.
+
+=cut
+
 sub appendTemplateLabels {
 	my $self = shift;
 	my $var = shift;
@@ -248,6 +271,18 @@ sub appendTemplateLabels {
 }
 
 #-------------------------------------------------------------------
+
+=head2 canEdit ( [ $userId ] )
+
+Extends the base method to include adding Threads to this CS.
+
+=head3 $userId
+
+A userId to check for edit permissions. If $userId is false, then it checks
+the current session user.
+
+=cut
+
 sub canEdit {
         my $self    = shift;
         my $userId  = shift     || $self->session->user->userId;
@@ -263,18 +298,43 @@ sub canEdit {
 			) && 
 			$self->canStartThread( $userId )
 		) || # account for new threads
-		$self->SUPER::canEdit( $userId )
+		$self->next::method( $userId )
 	);
 }
 
 #-------------------------------------------------------------------
+
+=head2 canModerate  ( [ $userId ] )
+
+Returns true if the user can edit this Collaboration System.
+
+=head3 $userId
+
+A userId to check for permission. If $userId is false, then it checks
+the current session user.
+
+=cut
+
 sub canModerate {
     my $self    = shift;
     my $userId  = shift     || $self->session->user->userId;
-    return $self->SUPER::canEdit( $userId );
+    return $self->WebGUI::Asset::canEdit( $userId );
 }
 
 #-------------------------------------------------------------------
+
+=head2 canPost ( [ $userId ] )
+
+Returns true if the user can post to the CS.  Checks that the CS is committed,
+that the user is in the group to post, or that the user can edit this CS.
+
+=head3 $userId
+
+A userId to check for edit permissions. If $userId is false, then it checks
+the current session user.
+
+=cut
+
 sub canPost {
     my $self    = shift;
     my $userId  = shift;
@@ -294,12 +354,25 @@ sub canPost {
     }
     # Users who can edit the collab can post
     else {
-        return $self->SUPER::canEdit( $userId );
+        return $self->WebGUI::Asset::canEdit( $userId );
     }
 }
 
 
 #-------------------------------------------------------------------
+
+=head2 canSubscribe  ( [ $userId ] )
+
+Returns true if the user can subscribe to the CS.  Checks that the user is registered
+and that they canView the Post.
+
+=head3 $userId
+
+A userId to check for edit permissions. If $userId is false, then it checks
+the current session user.
+
+=cut
+
 sub canSubscribe {
     my $self    = shift;
     my $userId  = shift;
@@ -308,10 +381,23 @@ sub canSubscribe {
                 ? WebGUI::User->new( $session, $userId )
                 : $self->session->user
                 ;
-    return ($user->userId ne "1" && $self->canView( $userId ) );
+    return ($user->isRegistered && $self->canView( $userId ) );
 }
 
 #-------------------------------------------------------------------
+
+=head2 canStartThread   ( [ $userId ] )
+
+Returns true if the user can start a thread in the CS.  Checks that the user is in the
+canStartThreadGroup or that they canEdit the CS.
+
+=head3 $userId
+
+A userId to check for edit permissions. If $userId is false, then it checks
+the current session user.
+
+=cut
+
 sub canStartThread {
     my $self    = shift;
     my $userId  = shift;
@@ -321,28 +407,44 @@ sub canStartThread {
                 : $self->session->user
                 ;
     return (
-            (
-                    $self->get("status") eq "approved" || 
-                    $self->getTagCount > 1 # checks to make sure that the cs has been committed at least once
-            ) && (
-                    $user->isInGroup($self->get("canStartThreadGroupId")) 
-                    || $self->SUPER::canEdit( $userId )
-            )
+        $user->isInGroup($self->get("canStartThreadGroupId")) 
+        || $self->WebGUI::Asset::canEdit( $userId )
     );
 }
 
 
 #-------------------------------------------------------------------
+
+=head2 canView ( [ $userId ] )
+
+Extends the base method to also allow users who canPost to the CS.
+
+=head3 $userId
+
+A userId to check for edit permissions. If $userId is false, then it checks
+the current session user.
+
+=cut
+
 sub canView {
 	my $self = shift;
         my $userId  = shift     || $self->session->user->userId;
-	return $self->SUPER::canView( $userId ) || $self->canPost( $userId );
+	return $self->next::method( $userId ) || $self->canPost( $userId );
 }
 
 #-------------------------------------------------------------------
+
+=head2 commit 
+
+Extend the base method to handle making a cron job for fetching mail for the CS.  The
+cron job is created even if the CS does not have email enabled.  The cron is disabled
+in that case.
+
+=cut
+
 sub commit {
     my $self = shift;
-    $self->SUPER::commit;
+    $self->next::method;
     my $cron = undef;
     if ($self->get("getMailCronId")) {
         $cron = WebGUI::Workflow::Cron->new($self->session, $self->get("getMailCronId"));
@@ -367,6 +469,13 @@ sub commit {
 }
 
 #-------------------------------------------------------------------
+
+=head2 createSubscriptionGroup 
+
+Creates a group to hold users who want to receive posts to this CS by email.
+
+=cut
+
 sub createSubscriptionGroup {
 	my $self = shift;
 	my $group = WebGUI::Group->new($self->session, "new");
@@ -414,8 +523,6 @@ sub definition {
 			  ($useKarma? (karmaRank=>$i18n->get('karma rank')) : ()),
 			 );
 
-	my $richEditorOptions = $session->db->buildHashRef("select distinct(assetData.assetId), assetData.title from asset, assetData where asset.className='WebGUI::Asset::RichEdit' and asset.assetId=assetData.assetId order by assetData.title");
-    
 	my %properties;
 	tie %properties, 'Tie::IxHash';
 	%properties = (
@@ -606,18 +713,31 @@ sub definition {
 			},
 		filterCode =>{
 			fieldType=>"filterContent",
-			defaultValue=>'javascript',
+			defaultValue=>'most',
 			tab=>'security',
 			label=>$i18n->get('filter code'),
 			hoverHelp=>$i18n->get('filter code description'),
 			},
+		replyFilterCode =>{
+			fieldType=>"filterContent",
+			defaultValue=>'most',
+			tab=>'security',
+			label=>$i18n->get('reply filter code'),
+			hoverHelp=>$i18n->get('reply filter code description'),
+			},
 		richEditor =>{
-			fieldType=>"selectBox",
+			fieldType=>"selectRichEditor",
 			defaultValue=>"PBrichedit000000000002",
 			tab=>'display',
 			label=>$i18n->get('rich editor'),
 			hoverHelp=>$i18n->get('rich editor description'),
-			options=>$richEditorOptions,
+			},
+		replyRichEditor =>{
+			fieldType=>"selectRichEditor",
+			defaultValue=>"PBrichedit000000000002",
+			tab=>'display',
+			label=>$i18n->get('reply rich editor'),
+			hoverHelp=>$i18n->get('reply rich editor description'),
 			},
 		attachmentsPerPost =>{
 			fieldType=>"integer",
@@ -789,31 +909,40 @@ sub definition {
             filter=>'fixId',
             defaultValue=>$groupIdEdit, # groupToEditPost should default to groupIdEdit
         },
+        postReceivedTemplateId =>{
+            fieldType=>'template',
+            namespace=>'Collaboration/PostReceived',
+            tab=>'display',
+            label=>$i18n->get('post received template'),
+            hoverHelp=>$i18n->get('post received template hoverHelp'),
+            defaultValue=>'default_post_received1',
+        },
         );
 
         push(@{$definition}, {
-		assetName=>'Issue Tool',
+		assetName=>'IssueCollaboration',
 		autoGenerateForms=>1,
 		icon=>'collaboration.gif',
                 tableName=>'IssueCollaboration',
                 className=>'WebGUI::Asset::Wobject::IssueCollaboration',
                 properties=>\%properties,
 		});
-        return $class->SUPER::definition($session, $definition);
+        return $class->next::method($session, $definition);
 }
 
 #-------------------------------------------------------------------
+
+=head2 duplicate 
+
+Extend the base method to handle making a subscription group for the new CS.
+
+=cut
+
 sub duplicate {
 	my $self = shift;
-	my $newAsset = $self->SUPER::duplicate(@_);
+	my $newAsset = $self->next::method(@_);
 	$newAsset->createSubscriptionGroup;
 	return $newAsset;
-}
-
-#-------------------------------------------------------------------
-# Too slow to try to find out children, just always assume new data
-sub getContentLastModified {
-    return time();
 }
 
 #-------------------------------------------------------------------
@@ -827,7 +956,7 @@ Add a tab for the mail interface.
 sub getEditTabs {
 	my $self = shift;
 	my $i18n = WebGUI::International->new($self->session,"Asset_Collaboration");
-	return ($self->SUPER::getEditTabs(), ['mail', $i18n->get('mail'), 9]);
+	return ($self->next::method, ['mail', $i18n->get('mail'), 9]);
 }
 
 #-------------------------------------------------------------------
@@ -844,7 +973,14 @@ sub getNewThreadUrl {
 }
 
 #-------------------------------------------------------------------
-sub getRssItems {
+
+=head2 getRssFeedItems 
+
+Returns an array ref of Posts for use in making the feeds for this CS.
+
+=cut
+
+sub getRssFeedItems {
 	my $self = shift;
 
 	# XXX copied and reformatted this query from www_viewRSS, but why is it constructed like this?
@@ -867,6 +1003,7 @@ SQL
 	my $datetime = $self->session->datetime;
 
     my @posts;
+    my $rssLimit = $self->get('itemsPerFeed');
     for my $postId (@postIds) {
 		my $post = WebGUI::Asset->new($self->session, $postId, 'WebGUI::Asset::IssuePost::IssueThread');
 		my $postUrl = $siteUrl . $post->getUrl;
@@ -887,23 +1024,26 @@ SQL
             }
         }
         
-        push @posts, { 
+        push @posts, {
             author          => $post->get('username'),
 		    title           => $post->get('title'),
-		    'link'          => $postUrl, 
+		    'link'          => $postUrl,
             guid            => $postUrl,
 		    description     => $post->get('synopsis'),
+            epochDate       => $post->get('creationDate'),
 		    pubDate         => $datetime->epochToMail($post->get('creationDate')),
-		    attachmentLoop  => $attachmentLoop, 
+		    attachmentLoop  => $attachmentLoop,
 			userDefined1 => $post->get("userDefined1"),
 			userDefined2 => $post->get("userDefined2"),
 			userDefined3 => $post->get("userDefined3"),
 			userDefined4 => $post->get("userDefined4"),
 			userDefined5 => $post->get("userDefined5"),
 		 };
+
+         last if $rssLimit <= scalar(@posts);
 	}
 
-    return @posts;
+    return \@posts;
 }
 
 #-------------------------------------------------------------------
@@ -949,6 +1089,10 @@ sub getSortBy {
     my $self = shift;
     my $scratchSortBy = $self->getId."_sortBy";
     my $sortBy = $self->session->scratch->get($scratchSortBy) || $self->getValue("sortBy");
+    # XXX: This should be fixed in an upgrade and in the definition, NOT HERE
+    if ( $sortBy eq "rating" ) {
+        $sortBy = "threadRating";
+    }
     return $sortBy;
 }
 
@@ -998,6 +1142,7 @@ sub getThreadsPaginator {
     my $sortOrder = $self->session->scratch->get($scratchSortOrder) || $self->get("sortOrder");
 	if ($sortBy ne $self->session->scratch->get($scratchSortBy) && $self->session->form->process("func") ne "editSave") {
 		$self->session->scratch->set($scratchSortBy,$self->session->form->process("sortBy"));
+        $self->session->scratch->set($scratchSortOrder, $sortOrder);
 	} elsif ($self->session->form->process("sortBy") && $self->session->form->process("func") ne "editSave") {
                 if ($sortOrder eq "asc") {
                         $sortOrder = "desc";
@@ -1013,6 +1158,7 @@ sub getThreadsPaginator {
         $sortBy = 'threadRating';
     } 
     $sortBy = join('.', map { $self->session->db->dbh->quote_identifier($_) } split(/\./, $sortBy));
+
 	my $sql = "
 		select 
 			asset.assetId,
@@ -1063,15 +1209,23 @@ sub getUnsubscribeUrl {
 
 
 #-------------------------------------------------------------------
+
+=head2 getViewTemplateVars 
+
+Returns a hash reference full of template variables that are used in
+several CS templates.
+
+=cut
+
 sub getViewTemplateVars {
 	my $self = shift;
 	my %var;
 	$var{'user.canPost'} = $self->canPost;
 	$var{'user.canStartThread'} = $self->canStartThread;
         $var{"add.url"} = $self->getNewThreadUrl;
-        $var{"rss.url"} = $self->getRssUrl;
+        $var{"rss.url"} = $self->getRssFeedUrl;
         $var{'user.isModerator'} = $self->canModerate;
-        $var{'user.isVisitor'} = ($self->session->user->userId eq '1');
+        $var{'user.isVisitor'} = ($self->session->user->isVisitor);
 	$var{'user.isSubscribed'} = $self->isSubscribed;
 	$var{'sortby.title.url'} = $self->getSortByUrl("title");
 	$var{'sortby.username.url'} = $self->getSortByUrl("username");
@@ -1174,22 +1328,35 @@ See WebGUI::Asset::prepareView() for details.
 =cut
 
 sub prepareView {
-	my $self = shift;
-	$self->SUPER::prepareView();
-	my $template = WebGUI::Asset::Template->new($self->session, $self->get("collaborationTemplateId")) or die "no good: ".$self->get("collaborationTemplateId");
-    if ($self->get('rssCapableRssEnabled')) {
-        $self->session->style->setLink($self->getRssUrl,{ rel=>'alternate', type=>'application/rss+xml', title=>$self->get('title') . ' RSS' });
+    my $self = shift;
+    $self->next::method;
+    my $template = WebGUI::Asset::Template->new($self->session, $self->get("collaborationTemplateId"));
+    if (!$template) {
+        WebGUI::Error::ObjectNotFound::Template->throw(
+            error      => qq{Template not found},
+            templateId => $self->get("collaborationTemplateId"),
+            assetId    => $self->getId,
+        );
     }
-	$template->prepare($self->getMetaDataAsTemplateVariables);
-	$self->{_viewTemplate} = $template;
+    $template->prepare($self->getMetaDataAsTemplateVariables);
+    $self->{_viewTemplate} = $template;
 }
 
 
 #-------------------------------------------------------------------
+
+=head2 processPropertiesFromFormPost 
+
+Extend the base method to handle creating subscription groups, propagating
+group privileges to all descendants and clearing scratch variables for sort key
+and direction.
+
+=cut
+
 sub processPropertiesFromFormPost {
 	my $self = shift;
         my $updatePrivs = ($self->session->form->process("groupIdView") ne $self->get("groupIdView") || $self->session->form->process("groupIdEdit") ne $self->get("groupIdEdit"));
-	$self->SUPER::processPropertiesFromFormPost;
+	$self->next::method;
 	if ($self->get("subscriptionGroupId") eq "") {
 		$self->createSubscriptionGroup;
 	}
@@ -1207,6 +1374,13 @@ sub processPropertiesFromFormPost {
 
 
 #-------------------------------------------------------------------
+
+=head2 purge 
+
+Extend the base method to delete the subscription group and cron job for emails.
+
+=cut
+
 sub purge {
 	my $self = shift;
 	my $group = WebGUI::Group->new($self->session, $self->get("subscriptionGroupId"));
@@ -1217,14 +1391,14 @@ sub purge {
 		my $cron = WebGUI::Workflow::Cron->new($self->session, $self->get("getMailCronId"));
 		$cron->delete if defined $cron;
 	}
-	$self->SUPER::purge;
+	$self->next::method;
 }
 
 #-------------------------------------------------------------------
 
 =head2 purgeCache ( )
 
-See WebGUI::Asset::purgeCache() for details.
+Extend the base method to delete view and visitor caches.
 
 =cut
 
@@ -1232,7 +1406,7 @@ sub purgeCache {
 	my $self = shift;
 	WebGUI::Cache->new($self->session,"view_".$self->getId)->delete;
 	WebGUI::Cache->new($self->session,$self->_visitorCacheKey)->delete;
-	$self->SUPER::purgeCache;
+	$self->next::method;
 }
 
 #-------------------------------------------------------------------
@@ -1366,6 +1540,13 @@ sub unsubscribe {
 
 
 #-------------------------------------------------------------------
+
+=head2 view 
+
+Render the CS, and handle local caching.
+
+=cut
+
 sub view {
 	my $self = shift;
 	if ($self->_visitorCacheOk) {
@@ -1387,35 +1568,6 @@ sub view {
 
 #-------------------------------------------------------------------
 
-=head2 www_editSave ( )
-
-We're extending www_editSave() here to deal with editing a post that has been denied by the approval process.  Our change will reassign the old working tag of this post to the user so that they can edit it.
-
-=cut
-
-sub www_editSave {
-	my $self    = shift;
-    my $session = $self->session;
-    
-    my $className = $session->form->param("class");
-    
-    #my $assetId = $self->session->form->param("assetId");
-    if($className eq "WebGUI::Asset::IssuePost::IssueThread") {
-        my $assetId = $session->form->param("assetId");
-      
-        if($assetId eq "new" && $self->getValue("useCaptcha")) {
-            my $captcha = $self->session->form->process("captcha","Captcha");
-            unless ($captcha) {
-                return $self->www_add;
-            }
-        }
-    }
-    
-    return $self->SUPER::www_editSave();
-}
-
-#-------------------------------------------------------------------
-
 =head2 www_search ( )
 
 The web method to display and use the forum search interface.
@@ -1423,33 +1575,38 @@ The web method to display and use the forum search interface.
 =cut
 
 sub www_search {
-	my $self = shift;
-	my $i18n = WebGUI::International->new($self->session, 'Asset_Collaboration');
-        my %var;
-	my $query = $self->session->form->process("query","text");
-        $var{'form.header'} = WebGUI::Form::formHeader($self->session,{action=>$self->getUrl})
-         	.WebGUI::Form::hidden($self->session,{ name=>"func", value=>"search" })
-        	.WebGUI::Form::hidden($self->session,{ name=>"doit", value=>1 });
-        $var{'query.form'} = WebGUI::Form::text($self->session,{
-                name=>'query',
-                value=>$query
-                });
-        $var{'form.search'} = WebGUI::Form::submit($self->session,{value=>$i18n->get(170,'WebGUI')});
-        $var{'form.footer'} = WebGUI::Form::formFooter($self->session);
-        $var{'back.url'} = $self->getUrl;
-	$self->appendTemplateLabels(\%var);
-        $var{doit} = $self->session->form->process("doit");
-        if ($self->session->form->process("doit")) {
-		my $search = WebGUI::Search->new($self->session);
+    my $self    = shift;
+    my $session = $self->session;
+	my $i18n    = WebGUI::International->new($session, 'Asset_Collaboration');
+    my $var     = {};
+	
+    my $query   = $self->session->form->process("query","text");
+    $var->{'form.header'} = WebGUI::Form::formHeader($self->session,{
+        action=>$self->getUrl("func=search;doit=1")
+    });
+    $var->{'query.form'}  = WebGUI::Form::text($self->session,{
+        name  => 'query',
+        value => $query
+    });
+    $var->{'form.search'} = WebGUI::Form::submit($self->session,{
+        value => $i18n->get(170,'WebGUI')
+    });
+    $var->{'form.footer'} = WebGUI::Form::formFooter($self->session);
+    $var->{'back.url'   } = $self->getUrl;
+	
+    $self->appendTemplateLabels($var);
+    $var->{'doit'       } = $self->session->form->process("doit");
+    if ($self->session->form->process("doit")) {
+        my $search = WebGUI::Search->new($self->session);
 		$search->search({
-				keywords=>$query,
-				lineage=>[$self->get("lineage")],
-				classes=>["WebGUI::Asset::IssuePost", "WebGUI::Asset::IssuePost::IssueThread"]
-				});
-		my $p = $search->getPaginatorResultSet($self->getUrl("func=search;doit=1;query=".$query), $self->get("threadsPerPage"));
-		$self->appendPostListTemplateVars(\%var, $p);
-        }
-        return  $self->processStyle($self->processTemplate(\%var, $self->get("searchTemplateId")));
+            keywords=>$query,
+            lineage=>[$self->get("lineage")],
+            classes=>["WebGUI::Asset::IssuePost", "WebGUI::Asset::IssuePost::IssueThread"]
+        });
+        my $p = $search->getPaginatorResultSet($self->getUrl("func=search;doit=1;query=".$query), $self->get("threadsPerPage"));
+        $self->appendPostListTemplateVars($var, $p);
+    }
+    return  $self->processStyle($self->processTemplate($var, $self->get("searchTemplateId")));
 }
 
 #-------------------------------------------------------------------
@@ -1485,11 +1642,31 @@ sub www_unsubscribe {
 }
 
 #-------------------------------------------------------------------
+
+=head2 www_view 
+
+Extend the base method to handle the visitor cache timeout.
+
+=cut
+
 sub www_view {
 	my $self = shift;
 	my $disableCache = ($self->session->form->process("sortBy") ne "");
-	$self->session->http->setCacheControl($self->get("visitorCacheTimeout")) if ($self->session->user->userId eq "1" && !$disableCache);
-	return $self->SUPER::www_view(@_);
+	$self->session->http->setCacheControl($self->get("visitorCacheTimeout")) if ($self->session->user->isVisitor && !$disableCache);
+	return $self->next::method(@_);
+}
+
+#-------------------------------------------------------------------
+
+=head2 www_viewRSS ( )
+
+Deprecated. Use www_viewRss() instead.
+
+=cut
+
+sub www_viewRSS {
+	my $self = shift;
+	return $self->www_viewRss;
 }
 
 1;
