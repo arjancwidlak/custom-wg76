@@ -144,13 +144,13 @@ sub www_emailGroupSend {
 	my $from = $session->form->process("from") || $session->setting->get("companyEmail");
         my $mail = WebGUI::Mail::Send->create($session, {toGroup=>$toGroupId,subject=>$subject,from=>$from,contentType=>"multipart/alternative"});
 	
-	#my $text = HTML::Entities::decode($html);
-	
-        $mail->{_message}->attach(
+	$mail->addText($text);	
+=cut        
+	$mail->{_message}->attach(
                 Charset=>"ISO-8859-1",
                 Data=>$text
                 );
-
+=cut
 	$mail->addHtml($html);
         #$mail->addFooter;
         $mail->queue;
@@ -228,11 +228,13 @@ sub www_emailTestSend {
         my $from = $session->form->process("from") || $session->setting->get("companyEmail");
         my $mail = WebGUI::Mail::Send->create($session, {to=>$session->form->process("to"),subject=>$subject,from=>$from,contentType=>"multipart/alternative"});
 
+	$mail->addText($text);
+=cut
 	$mail->{_message}->attach(
                 Charset=>"ISO-8859-1",
                 Data=>$text
                 );
-
+=cut
         $mail->addHtml($html);
         #$mail->addFooter;
         $mail->queue;
