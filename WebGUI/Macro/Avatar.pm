@@ -117,7 +117,7 @@ sub process {
 		$filename = $files[0];
 	}
 	#get the path to the file
-	$url = $storage->getUrl($filename) unless $nofile;
+	$url = $storage->getUrl("thumb-".$filename) unless $nofile;
 	
 	my @name;
 	my $i = 0;
