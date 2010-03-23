@@ -33,15 +33,15 @@ system that has storageId and filename properties or if the assetId is a storage
 with that ID exists, then an i or if the assetId is a storageIdnternationalized error message will
 be returned.
 
-=head assetId
+=head2 assetId
 
 The assetId of a File or Image Asset, or a storageId.
 
-=head returnFileName
+=head2 returnFileName
 
 Boolean indicating if the macro will return only the File Name instead of a url.
 
-=head returnThumb
+=head2 returnThumb
 
 Boolean indicating that a thumbnail should be returned
 
