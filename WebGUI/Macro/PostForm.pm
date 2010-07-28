@@ -67,6 +67,7 @@ sub process {
 
     # We don't want the sobject style wrapped around our precious content.
     local *{ WebGUI::Asset::Wobject::Collaboration::processStyle } = sub { return $_[1] };
+    local *WebGUI::Session::Style::sent = sub { return 0 }; 
     
     return undef unless $reply->canEdit;
  
