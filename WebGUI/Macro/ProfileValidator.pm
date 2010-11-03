@@ -60,7 +60,8 @@ sub process {
 
     my @field_loop;
     my $registrationFields = 0;	
-    foreach my $field (@{WebGUI::ProfileField->getRegistrationFields($session)}) {
+    #foreach my $field (@{WebGUI::ProfileField->getRegistrationFields($session)}) {
+    foreach my $field (@{WebGUI::ProfileField->getEditableFields($session)}) {
 	next if ($field->isRequired);
 	$registrationFields++;
 	next if ($field->formField(undef,2,$session->user));
