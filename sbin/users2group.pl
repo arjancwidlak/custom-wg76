@@ -55,6 +55,7 @@ sub addUsersToGroup {
 		# instantiate user and add to group
 		my $counter = 0;
 		foreach my $id( @users ) {
+			next if $id == 1;
 			print "id: $id\n";
 			$counter++;
 			my $u = WebGUI::User->new( $session, $id );
