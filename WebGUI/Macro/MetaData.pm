@@ -42,22 +42,15 @@ sub process {
         # Setup options for multiple values
         tie my %options, 'Tie::IxHash';
 
-	if(($meta->{possibleValues} =~ m/{/) && ($meta->{possibleValues} =~ m/}/)){ 
-	        $values = WebGUI::Operation::Shared::secureEval( $session, $meta->{possibleValues} );
+	foreach my $option ( split /\n/, $meta->{ possibleValues } ) {
+		# Key and label are separated by a pipe
+		my ($key, $value) = split /\|/, $option;
+
+		# Remove trailing white space
+		$key =~ s{ \s+ $ }{}xms;
+
+		$options{ $key } = defined $value ? $value : $key;
 	}
-	else{
-		$values = $meta->{possibleValues};
-	}
-        if (ref $values eq 'HASH') {
-            %options = %{$values};
-        }
-        else {
-            %options = 
-                map     { s/\s+$//; $_ => $_ }          # Turn into hash ref 
-                sort
-                split   /\n/, $meta->{ possibleValues } # Split possible values
-                ;   
-        }
 
         # Append select a value message for selectBoxes
         %options = ("" => WebGUI::International->new($session, 'Asset')->get('Select'), %options) 
@@ -76,7 +69,7 @@ sub process {
         $var->{ $fieldName . '_display' } = $options{ $meta->{ value } } || $meta->{ value };
         $var->{ $fieldName . '_form'    } = $form;
         $var->{ $fieldName . '_id'      } = $id;
-        
+
         push @metaLoop, {
             "name_is_$fieldName"    => 1,
             "id"                    => $id,
@@ -85,7 +78,7 @@ sub process {
             "display"               => $options{ $meta->{ value } } || $meta->{ value },
             "form"                  => $form,
             "value_loop"            => [ 
-                map     { {value => $_} } 
+                map     { {value => $_, display => exists $options{ $_ } ? $options{ $_ } : $_ } }
                 sort
                 split   /\n/, $meta->{ value } 
             ],
