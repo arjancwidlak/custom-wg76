@@ -11,6 +11,8 @@ package WebGUI::Macro::ProfileFieldPhoto;
 #-------------------------------------------------------------------
 
 use strict;
+use WebGUI::Asset;
+use WebGUI::Storage;
 
 =head1 NAME
 
@@ -91,8 +93,22 @@ sub process {
         my $replacementFieldValue = $user->profileField($replacementField);
 	    return undef unless ($replacementFieldValue);
         $replacementFieldValue =~ s/ /-/g;
-
-    	return $replacementPath.$replacementFieldValue.'.'.$replacementExtension;
+        my $assetUrl = $replacementPath.$replacementFieldValue.'.'.$replacementExtension;
+        my $asset = WebGUI::Asset->newByUrl( $session, $assetUrl );
+        my $i18n = WebGUI::International->new( $session, 'Macro_ProfileFieldPhoto' );
+        if ( not defined $asset ) {
+            return $i18n->get('invalid url');
+        }
+        my $storageId = $asset->get('storageId');
+        if( not defined $storageId ) {
+            return $i18n->get('no storage');
+        }
+        my $filename = $asset->get('filename');
+        if ( not defined $filename ) {
+            return $i18n->get('no filename');
+        }
+        my $storage = WebGUI::Storage->get( $session, $storageId );
+        return $storage->getUrl( $filename );
     }
 }
 
